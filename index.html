@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICC Data — ระบบข้อมูลตัวแทน ทริป และศิษย์เก่า</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- หน้าเข้าสู่ระบบ -->
+<section id="login" class="login hidden">
+  <form id="loginForm" class="login-card">
+    <div class="brand"><span class="brand-mark">ICC</span><span>International Chinese College · PIM</span></div>
+    <h1>เข้าสู่ระบบข้อมูล ICC</h1>
+    <p class="muted">ตัวแทนรับสมัคร ทริป นักศึกษา และศิษย์เก่า ในที่เดียว</p>
+    <label>อีเมล<input type="email" name="email" required autocomplete="username"></label>
+    <label>รหัสผ่าน<input type="password" name="password" required autocomplete="current-password"></label>
+    <button type="submit" class="btn primary">เข้าสู่ระบบ</button>
+    <p id="loginError" class="error"></p>
+    <p id="apiWarn" class="notice hidden">ยังไม่ได้ตั้งค่า URL ของ Apps Script — เปิดไฟล์ <code>app.js</code> แล้ววาง URL ที่ได้จากการ Deploy ในบรรทัด <code>API_URL</code></p>
+  </form>
+</section>
+
+<!-- แอปหลัก -->
+<div id="app" class="app hidden">
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">ICC</span><span>ระบบข้อมูล</span></div>
+    <nav id="nav">
+      <a href="#dashboard" data-route="dashboard">ภาพรวม</a>
+      <a href="#ai" data-route="ai" data-perm="ai">ถาม AI</a>
+      <div class="nav-group">ข้อมูล</div>
+      <a href="#table/Agency" data-route="table/Agency">ตัวแทน / สถาบัน</a>
+      <a href="#table/Student" data-route="table/Student">นักศึกษาตามตัวแทน</a>
+      <a href="#table/Trip" data-route="table/Trip">ทริป</a>
+      <a href="#table/TripVisit" data-route="table/TripVisit">จุดแวะในทริป</a>
+      <a href="#table/Alumni" data-route="table/Alumni">ศิษย์เก่า</a>
+      <a href="#table/Teacher" data-route="table/Teacher">อาจารย์</a>
+      <div class="nav-group">จัดการ</div>
+      <a href="#import" data-route="import" data-perm="import">นำเข้าไฟล์ Excel</a>
+      <a href="#table/Master_Program" data-route="table/Master_Program">Master: หลักสูตร</a>
+      <a href="#table/Master_Industry" data-route="table/Master_Industry">Master: อุตสาหกรรม</a>
+      <a href="#users" data-route="users" data-perm="manage_users">ผู้ใช้ระบบ</a>
+    </nav>
+    <div class="sidebar-foot">
+      <div id="whoami"></div>
+      <div id="storageMode" class="muted small"></div>
+      <button id="logoutBtn" class="btn ghost small">ออกจากระบบ</button>
+    </div>
+  </aside>
+  <main id="main" class="main"></main>
+</div>
+
+<!-- กล่องฟอร์ม -->
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="modalTitle"></h2><button class="btn ghost" id="modalClose" aria-label="ปิด">✕</button></div>
+    <form id="modalForm"></form>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="vendor/chart.umd.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
