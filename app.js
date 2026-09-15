@@ -17,6 +17,7 @@ const can = (p) => state.perms.includes(p);
 
 // URL ของ Apps Script อยู่ในไฟล์ config.js (ไม่ต้องแก้ไฟล์นี้)
 const API_URL = (window.ICC_CONFIG && window.ICC_CONFIG.API_URL) || '';
+const REQUIRED_API_VERSION = 3; // ต้องตรงกับ API_VERSION ใน Code.gs
 const apiOk = () => /^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL);
 
 // คิวส่งคำสั่ง: Apps Script รับคำสั่งพร้อมกันหลายอันไม่ดี ส่งทีละอันและลองใหม่เมื่อคำตอบไม่ใช่ JSON
@@ -91,16 +92,25 @@ function showLogin() { $('#login').classList.remove('hidden'); $('#app').classLi
 async function boot() {
   if (!apiOk()) { showLogin(); $('#apiWarn').classList.remove('hidden'); return; }
   if (!localStorage.getItem('icc_token')) { showLogin(); return; }
-  try { enter(await api('/api/boot')); } catch { showLogin(); }
+  try { enter(await api('/api/boot')); }
+  catch (e) { try { const me = await api('/api/me'); enter({ ...me, version: 0 }); } catch { showLogin(); } }
+}
+function versionBanner(v) {
+  state.banner = null;
+  if ((v || 0) >= REQUIRED_API_VERSION) return;
+  const b = el('div', { id: 'versionBanner', class: 'notice', style: 'margin:0 0 16px' },
+    el('strong', {}, 'Apps Script ยังเป็นโค้ดเวอร์ชันเก่า'), ` (พบเวอร์ชัน ${v || 'ไม่ระบุ'} ต้องการ ${REQUIRED_API_VERSION}) — บางหน้าจะทำงานไม่ครบ วิธีแก้: เปิด Apps Script → วาง Code.gs ล่าสุด → Deploy → Manage deployments → ✏️ → Version: New version → Deploy (URL เดิม)`);
+  state.banner = b;
 }
 async function enter(me) {
-  state.user = me.user; state.perms = me.permissions;
+  state.user = me.user; state.perms = me.permissions; state.apiVersion = me.version || 0;
   state.meta = me.tables || (await api('/api/meta')).tables;
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
   $('#whoami').innerHTML = `<strong>${esc(me.user.name)}</strong><br><span class="muted small">${esc(me.user.email)} · ${esc(roleLabel(me.user.role))}</span>`;
   $('#storageMode').textContent = 'เก็บข้อมูลบน Google Sheets ผ่าน Apps Script';
   for (const a of document.querySelectorAll('#nav a[data-perm]')) a.classList.toggle('hidden', !can(a.dataset.perm));
   if (state.user.role === 'admin' && !location.hash) location.hash = '#users';
+  versionBanner(state.apiVersion);
   route();
 }
 const roleLabel = (r) => ({ executive: 'ผู้บริหาร', staff: 'เจ้าหน้าที่', admin: 'แอดมิน' }[r] || r);
@@ -123,6 +133,7 @@ function route() {
   closeModal();
   state.charts.forEach((c) => c.destroy()); state.charts = [];
   const main = $('#main'); main.innerHTML = '';
+  if (state.banner) main.append(state.banner.cloneNode(true));
   main.append(el('div', { class: 'loading' }, el('span', { class: 'spinner' }), 'กำลังดึงข้อมูลจาก Google Sheets…'));
   const [page, arg] = hash.split('/');
   const pages = { dashboard: renderDashboard, ai: renderAI, table: () => renderTable(arg), import: renderImport, users: renderUsers };
@@ -223,8 +234,10 @@ async function renderTable(name) {
   const meta = state.meta[name];
   if (!meta) { main.append(el('div', { class: 'card' }, 'ไม่พบตาราง')); return; }
   const need = [name, ...meta.fields.filter((f) => f.type === 'select' && f.options && !Array.isArray(f.options)).map((f) => f.options.table).filter((t) => !state.cache[t])];
-  const bundle = await api('/api/bundle', { method: 'POST', body: { tables: [...new Set(need)] } });
-  Object.assign(state.cache, bundle);
+  let bundle = null;
+  if (state.apiVersion >= 3) { try { bundle = await api('/api/bundle', { method: 'POST', body: { tables: [...new Set(need)] } }); } catch (e) { bundle = null; } }
+  if (bundle && Array.isArray(bundle[name])) Object.assign(state.cache, bundle);
+  else state.cache[name] = await loadTable(name, true); // โค้ด Apps Script เก่า: ขอทีละตาราง
   const rows = state.cache[name]; const lookups = await loadLookups(meta);
   const label = (f, v) => {
     if (f.type === 'boolean') return v === true || ['true', 'TRUE', '1'].includes(String(v)) ? 'ใช่' : '';
@@ -241,7 +254,7 @@ async function renderTable(name) {
       can('import') ? el('a', { class: 'btn', href: `#import` }, 'นำเข้าไฟล์') : null,
       can('create') ? el('button', { class: 'btn primary', onclick: () => openForm(name, null, () => renderTable(name)) }, '+ เพิ่มข้อมูล') : null));
   const wrap = el('div', { class: 'table-wrap' }); const pager = el('div', { class: 'pager' });
-  main.innerHTML = ''; main.append(head, wrap, pager);
+  main.innerHTML = ''; if (state.banner) main.append(state.banner.cloneNode(true)); main.append(head, wrap, pager);
   function draw() {
     const filtered = rows.filter((r) => !query || Object.values(r).some((v) => String(v).toLowerCase().includes(query)));
     filtered.sort((a, b) => String(a[sortKey] ?? '').localeCompare(String(b[sortKey] ?? ''), undefined, { numeric: true }) * sortDir);
