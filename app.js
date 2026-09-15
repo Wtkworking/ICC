@@ -20,7 +20,7 @@ const API_URL = (window.ICC_CONFIG && window.ICC_CONFIG.API_URL) || '';
 const apiOk = () => /^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL);
 
 // คิวส่งคำสั่ง: Apps Script รับคำสั่งพร้อมกันหลายอันไม่ดี ส่งทีละอันและลองใหม่เมื่อคำตอบไม่ใช่ JSON
-let queue = Promise.resolve();
+let lanes = [Promise.resolve(), Promise.resolve()];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function callScript(payload) {
   const attempt = async () => {
@@ -36,9 +36,11 @@ async function callScript(payload) {
   if (lastErr.message === 'NOT_JSON') throw new Error('Google ตอบกลับช้าหรือขัดข้องชั่วคราว (ลองแล้ว 3 ครั้ง) — กดรีเฟรชหน้าอีกครั้ง ถ้ายังเป็นอยู่ให้เช็กว่า Deploy ล่าสุดเป็น Web app / Anyone');
   throw new Error('ติดต่อ Apps Script ไม่ได้ — ตรวจสอบอินเทอร์เน็ตและ URL ใน config.js');
 }
+let laneIdx = 0;
 function enqueue(payload) {
-  const run = queue.then(() => callScript(payload));
-  queue = run.catch(() => {});
+  const i = laneIdx; laneIdx = (laneIdx + 1) % lanes.length;
+  const run = lanes[i].then(() => callScript(payload));
+  lanes[i] = run.catch(() => {});
   return run;
 }
 
@@ -53,6 +55,8 @@ async function api(url, opts = {}) {
   if (path === '/api/login') payload = { action: 'login', email: body.email, password: body.password };
   else if (path === '/api/logout') payload.action = 'logout';
   else if (path === '/api/me') payload.action = 'me';
+  else if (path === '/api/boot') payload.action = 'boot';
+  else if (path === '/api/bundle') Object.assign(payload, { action: 'bundle', tables: body.tables });
   else if (path === '/api/meta') payload.action = 'meta';
   else if (path === '/api/dashboard') payload.action = 'dashboard';
   else if (path === '/api/ai/ask') Object.assign(payload, { action: 'ai', question: body.question });
@@ -87,11 +91,11 @@ function showLogin() { $('#login').classList.remove('hidden'); $('#app').classLi
 async function boot() {
   if (!apiOk()) { showLogin(); $('#apiWarn').classList.remove('hidden'); return; }
   if (!localStorage.getItem('icc_token')) { showLogin(); return; }
-  try { enter(await api('/api/me')); } catch { showLogin(); }
+  try { enter(await api('/api/boot')); } catch { showLogin(); }
 }
 async function enter(me) {
   state.user = me.user; state.perms = me.permissions;
-  state.meta = (await api('/api/meta')).tables;
+  state.meta = me.tables || (await api('/api/meta')).tables;
   $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
   $('#whoami').innerHTML = `<strong>${esc(me.user.name)}</strong><br><span class="muted small">${esc(me.user.email)} · ${esc(roleLabel(me.user.role))}</span>`;
   $('#storageMode').textContent = 'เก็บข้อมูลบน Google Sheets ผ่าน Apps Script';
@@ -119,11 +123,15 @@ function route() {
   closeModal();
   state.charts.forEach((c) => c.destroy()); state.charts = [];
   const main = $('#main'); main.innerHTML = '';
+  main.append(el('div', { class: 'loading' }, el('span', { class: 'spinner' }), 'กำลังดึงข้อมูลจาก Google Sheets…'));
   const [page, arg] = hash.split('/');
   const pages = { dashboard: renderDashboard, ai: renderAI, table: () => renderTable(arg), import: renderImport, users: renderUsers };
   const guard = { dashboard: 'read', ai: 'ai', table: 'read', import: 'import', users: 'manage_users' };
   if (!can(guard[page] || 'read')) { main.append(el('div', { class: 'card' }, 'สิทธิ์ของคุณไม่สามารถเข้าหน้านี้ได้')); return; }
-  (pages[page] || renderDashboard)(main).catch((e) => { main.innerHTML = ''; main.append(el('div', { class: 'card error' }, e.message)); });
+  const clearLoading = () => main.querySelectorAll('.loading').forEach((n) => n.remove());
+  const origAppend = main.append.bind(main);
+  main.append = (...a) => { clearLoading(); main.append = origAppend; origAppend(...a); };
+  (pages[page] || renderDashboard)(main).then(clearLoading).catch((e) => { main.innerHTML = ''; main.append(el('div', { class: 'card error' }, e.message)); });
 }
 
 /* ---------------- dashboard ---------------- */
@@ -214,7 +222,10 @@ async function renderTable(name) {
   const main = $('#main');
   const meta = state.meta[name];
   if (!meta) { main.append(el('div', { class: 'card' }, 'ไม่พบตาราง')); return; }
-  const [rows, lookups] = await Promise.all([loadTable(name, true), loadLookups(meta)]);
+  const need = [name, ...meta.fields.filter((f) => f.type === 'select' && f.options && !Array.isArray(f.options)).map((f) => f.options.table).filter((t) => !state.cache[t])];
+  const bundle = await api('/api/bundle', { method: 'POST', body: { tables: [...new Set(need)] } });
+  Object.assign(state.cache, bundle);
+  const rows = state.cache[name]; const lookups = await loadLookups(meta);
   const label = (f, v) => {
     if (f.type === 'boolean') return v === true || ['true', 'TRUE', '1'].includes(String(v)) ? 'ใช่' : '';
     if (f.type === 'select' && f.options && !Array.isArray(f.options)) { const m = lookups[f.key]; return (m && m[v]) || v; }
