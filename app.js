@@ -18,7 +18,7 @@ const can = (p) => state.perms.includes(p);
 // ====================================================================
 //  ตั้งค่าตรงนี้ที่เดียว: วาง URL ของ Apps Script Web App (ลงท้าย /exec)
 // ====================================================================
-const API_URL = 'https://script.google.com/macros/s/AKfycbzANVTExlcc9d7AFxNAM3oBHqjmnbgNzPykitjAJxpW4zBne8lxJ61qaNQ6y9HriqiI/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbw904aC2THsS_qdY0an26ie1Bwph2D0sgHCDk7yy_8hQ1i01TVxDE4NBnr37z1Z-PJ0/exec';
 
 // แปลงคำสั่งแบบ REST ที่หน้าเว็บใช้ ให้เป็น action ที่ Apps Script เข้าใจ แล้วส่งเป็น POST text/plain (เลี่ยง CORS preflight)
 async function api(url, opts = {}) {
