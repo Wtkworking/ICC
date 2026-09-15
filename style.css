@@ -110,3 +110,7 @@ td.num, th.num { text-align: right; }
 .dropzone.over { border-color: var(--green); background: var(--green-soft); }
 .problem { color: var(--red); font-size: 13px; }
 @media (prefers-reduced-motion: no-preference) { .modal-card { animation: pop .14s ease-out; } @keyframes pop { from { transform: translateY(6px); opacity: 0; } } }
+.loading { display: flex; align-items: center; gap: 12px; color: var(--muted); padding: 40px 0; }
+.spinner { width: 18px; height: 18px; border: 2px solid var(--rule); border-top-color: var(--green); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
