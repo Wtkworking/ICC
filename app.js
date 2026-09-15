@@ -345,15 +345,15 @@ async function renderImport(main) {
   const file = el('input', { type: 'file', accept: '.xlsx,.xls,.csv' });
   const zone = el('div', { class: 'dropzone' }, el('p', {}, 'ลากไฟล์ Excel/CSV มาวางที่นี่ หรือเลือกไฟล์'), file);
   const out = el('div');
-  main.append(el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'นำเข้าไฟล์ Excel'), el('p', { class: 'muted' }, 'ระบบจะจับคู่คอลัมน์ให้อัตโนมัติจากชื่อหัวตาราง ตรวจสอบก่อน แล้วค่อยยืนยันนำเข้า'))));
+  main.append(el('div', { class: 'page-head' }, el('div', {}, el('h1', {}, 'นำเข้าไฟล์ Excel'), el('p', { class: 'muted' }, 'ลากไฟล์มาวาง ระบบจะเลือกตารางและจับคู่คอลัมน์ให้เองจากหัวตาราง ตรวจสอบก่อน แล้วค่อยยืนยันนำเข้า'))));
   main.append(el('div', { class: 'card', style: 'margin-bottom:16px' }, el('label', {}, 'นำเข้าไปที่ตาราง', sel), el('div', { style: 'margin-top:14px' }, zone),
     el('p', { class: 'muted small', style: 'margin-top:10px' }, 'เคล็ดลับ: ดาวน์โหลด Excel จากหน้าตารางนั้นก่อน แล้วใช้เป็นแบบฟอร์มกรอก หัวคอลัมน์จะตรงกันพอดี · ถ้าไฟล์มีคอลัมน์ ID ระบบจะใช้ ID นั้น (ถ้าซ้ำจะออกใหม่)')), out);
   ['dragover', 'dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.toggle('over', ev === 'dragover'); if (ev === 'drop') handle(e.dataTransfer.files[0]); }));
   file.addEventListener('change', () => handle(file.files[0]));
+  sel.addEventListener('change', () => { if (file.files[0]) handle(file.files[0], true); });
 
-  async function handle(f) {
+  async function handle(f, keepSelection = false) {
     if (!f) return;
-    const name = sel.value; const meta = state.meta[name];
     const buf = await f.arrayBuffer();
     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
@@ -361,6 +361,23 @@ async function renderImport(main) {
     if (!raw.length) { out.innerHTML = ''; out.append(el('div', { class: 'card error' }, 'ไฟล์ไม่มีข้อมูล (ต้องมีหัวตารางในแถวแรก)')); return; }
     const srcCols = Object.keys(raw[0]);
     const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9\u0e00-\u0e7f\u4e00-\u9fff]/g, '');
+    // เลือกตารางให้อัตโนมัติ: จากชื่อ sheet/ชื่อไฟล์ ก่อน แล้วค่อยดูว่าหัวคอลัมน์ตรงกับตารางไหนมากที่สุด
+    const detect = () => {
+      const hint = norm(wb.SheetNames[0]) + '|' + norm(f.name.replace(/\.[^.]+$/, '').replace(/^\d+_/, ''));
+      const byName = names.find((n) => hint.split('|').includes(norm(n)));
+      if (byName) return byName;
+      let best = null, bestScore = 0;
+      for (const n of names) {
+        const keys = state.meta[n].fields.map((fl) => norm(fl.key));
+        const score = srcCols.filter((c) => keys.includes(norm(c))).length / Math.max(keys.length, 1);
+        if (score > bestScore) { bestScore = score; best = n; }
+      }
+      return bestScore >= 0.5 ? best : null;
+    };
+    const detected = keepSelection ? sel.value : detect();
+    if (detected && detected !== sel.value) { sel.value = detected; toast(`เลือกตาราง "${state.meta[detected].label}" ให้อัตโนมัติจากไฟล์`); }
+    else if (!detected) toast('ระบบไม่แน่ใจว่าไฟล์นี้เป็นตารางไหน กรุณาเลือกตารางด้านบนให้ถูกก่อนตรวจสอบ', true);
+    const name = sel.value; const meta = state.meta[name];
     const mapping = {}; // field key -> source col
     for (const fld of meta.fields) {
       mapping[fld.key] = srcCols.find((c) => norm(c) === norm(fld.key)) || srcCols.find((c) => norm(c) === norm(fld.label)) || srcCols.find((c) => norm(c).includes(norm(fld.key))) || '';
