@@ -15,17 +15,39 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const state = { user: null, perms: [], meta: null, cache: {}, charts: [] };
 const can = (p) => state.perms.includes(p);
 
-// ====================================================================
-//  ตั้งค่าตรงนี้ที่เดียว: วาง URL ของ Apps Script Web App (ลงท้าย /exec)
-// ====================================================================
-const API_URL = 'https://script.google.com/macros/s/AKfycbw904aC2THsS_qdY0an26ie1Bwph2D0sgHCDk7yy_8hQ1i01TVxDE4NBnr37z1Z-PJ0/exec';
+// URL ของ Apps Script อยู่ในไฟล์ config.js (ไม่ต้องแก้ไฟล์นี้)
+const API_URL = (window.ICC_CONFIG && window.ICC_CONFIG.API_URL) || '';
+const apiOk = () => /^https:\/\/script\.google\.com\/.*\/exec$/.test(API_URL);
 
-// แปลงคำสั่งแบบ REST ที่หน้าเว็บใช้ ให้เป็น action ที่ Apps Script เข้าใจ แล้วส่งเป็น POST text/plain (เลี่ยง CORS preflight)
+// คิวส่งคำสั่ง: Apps Script รับคำสั่งพร้อมกันหลายอันไม่ดี ส่งทีละอันและลองใหม่เมื่อคำตอบไม่ใช่ JSON
+let queue = Promise.resolve();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function callScript(payload) {
+  const attempt = async () => {
+    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), redirect: 'follow' });
+    const text = await r.text();
+    try { return JSON.parse(text); } catch { throw Object.assign(new Error('NOT_JSON'), { snippet: text.slice(0, 200), status: r.status }); }
+  };
+  let lastErr;
+  for (let i = 0; i < 3; i++) {
+    try { return await attempt(); }
+    catch (e) { lastErr = e; await sleep(600 * (i + 1)); }
+  }
+  if (lastErr.message === 'NOT_JSON') throw new Error('Google ตอบกลับช้าหรือขัดข้องชั่วคราว (ลองแล้ว 3 ครั้ง) — กดรีเฟรชหน้าอีกครั้ง ถ้ายังเป็นอยู่ให้เช็กว่า Deploy ล่าสุดเป็น Web app / Anyone');
+  throw new Error('ติดต่อ Apps Script ไม่ได้ — ตรวจสอบอินเทอร์เน็ตและ URL ใน config.js');
+}
+function enqueue(payload) {
+  const run = queue.then(() => callScript(payload));
+  queue = run.catch(() => {});
+  return run;
+}
+
+// แปลงคำสั่งแบบ REST ที่หน้าเว็บใช้ ให้เป็น action ที่ Apps Script เข้าใจ
 async function api(url, opts = {}) {
-  if (!API_URL.startsWith('https://script.google.com/')) { $('#apiWarn')?.classList.remove('hidden'); throw new Error('ยังไม่ได้ตั้งค่า API_URL ใน app.js'); }
+  if (!apiOk()) { $('#apiWarn')?.classList.remove('hidden'); throw new Error('ยังไม่ได้ตั้งค่า API_URL ใน config.js'); }
   const method = (opts.method || 'GET').toUpperCase();
   const body = opts.body || {};
-  const [path, qs] = url.split('?');
+  const [path] = url.split('?');
   let payload = { token: localStorage.getItem('icc_token') || '' };
   let m;
   if (path === '/api/login') payload = { action: 'login', email: body.email, password: body.password };
@@ -41,10 +63,7 @@ async function api(url, opts = {}) {
   else if ((m = /^\/api\/data\/(\w+)$/.exec(path))) Object.assign(payload, method === 'GET' ? { action: 'data.list', table: m[1] } : { action: 'data.create', table: m[1], record: body });
   else throw new Error('ไม่รู้จักคำสั่ง ' + url);
 
-  let r;
-  try { r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload), redirect: 'follow' }); }
-  catch (e) { throw new Error('ติดต่อ Apps Script ไม่ได้ — ตรวจสอบ URL และการ Deploy (Who has access ต้องเป็น Anyone)'); }
-  const data = await r.json().catch(() => ({ error: 'Apps Script ตอบกลับไม่ใช่ JSON — ตรวจสอบว่า Deploy เป็น Web app และ Who has access = Anyone' }));
+  const data = await enqueue(payload);
   if (data.error) {
     if (data.status === 401 && path !== '/api/login') { localStorage.removeItem('icc_token'); showLogin(); }
     throw Object.assign(new Error(data.error), { data });
@@ -66,7 +85,7 @@ async function loadTable(name, fresh = false) {
 /* ---------------- auth ---------------- */
 function showLogin() { $('#login').classList.remove('hidden'); $('#app').classList.add('hidden'); }
 async function boot() {
-  if (!API_URL.startsWith('https://script.google.com/')) { showLogin(); $('#apiWarn').classList.remove('hidden'); return; }
+  if (!apiOk()) { showLogin(); $('#apiWarn').classList.remove('hidden'); return; }
   if (!localStorage.getItem('icc_token')) { showLogin(); return; }
   try { enter(await api('/api/me')); } catch { showLogin(); }
 }
