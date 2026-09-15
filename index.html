@@ -20,7 +20,7 @@
     <label>รหัสผ่าน<input type="password" name="password" required autocomplete="current-password"></label>
     <button type="submit" class="btn primary">เข้าสู่ระบบ</button>
     <p id="loginError" class="error"></p>
-    <p id="apiWarn" class="notice hidden">ยังไม่ได้ตั้งค่า URL ของ Apps Script — เปิดไฟล์ <code>app.js</code> แล้ววาง URL ที่ได้จากการ Deploy ในบรรทัด <code>API_URL</code></p>
+    <p id="apiWarn" class="notice hidden">ยังไม่ได้ตั้งค่า URL ของ Apps Script — เปิดไฟล์ <code>config.js</code> แล้ววาง URL ที่ได้จากการ Deploy ในบรรทัด <code>API_URL</code></p>
   </form>
 </section>
 
@@ -65,6 +65,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="config.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
